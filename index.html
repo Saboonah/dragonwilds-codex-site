@@ -99,7 +99,29 @@ body.docked .shell{grid-template-columns:232px minmax(0,1fr) 440px}
 
 /* grid */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
-.card{display:grid;grid-template-columns:56px minmax(0,1fr);gap:12px;align-items:center;text-align:left;border:1px solid var(--line);background:var(--panel);border-radius:var(--r);padding:10px 12px 10px 10px;content-visibility:auto;contain-intrinsic-size:auto 78px;transition:border-color .12s,transform .12s}
+.card{display:grid;grid-template-columns:56px minmax(0,1fr);gap:12px;align-items:center;text-align:left;border:1px solid var(--line);background:var(--panel);border-radius:var(--r);padding:10px 12px 10px 10px;transition:border-color .12s,transform .12s}
+.cw{position:relative;content-visibility:auto;contain-intrinsic-size:auto 78px}
+.cw .card{width:100%;height:100%;padding-right:42px}
+.chk{position:absolute;top:5px;right:5px;width:32px;height:32px;border:0;background:none;border-radius:8px;padding:0;display:grid;place-items:center}
+.chk::before{content:"";width:20px;height:20px;border-radius:6px;border:2px solid var(--muted);background:var(--panel);transition:background .12s,border-color .12s}
+.chk:hover::before{border-color:var(--accent)}
+.chk[aria-checked="true"]::before{background:var(--accent);border-color:var(--accent)}
+.chk[aria-checked="true"]::after,.own[aria-checked="true"] .box::after{content:"";position:absolute;left:50%;top:50%;width:6px;height:11px;border:solid var(--bg);border-width:0 2.5px 2.5px 0;transform:translate(-50%,-62%) rotate(45deg)}
+.cw.done .card .tileicon,.cw.done .card .nm,.cw.done .card .sub{opacity:.55}
+.cw.done .card{border-color:var(--accent-soft)}
+.own{display:inline-flex;align-items:center;gap:9px;margin-top:10px;border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:6px 14px 6px 8px;font-size:14px;font-weight:600;color:var(--ink)}
+.own .box{width:20px;height:20px;border-radius:6px;border:2px solid var(--muted);position:relative;flex:none;background:var(--panel)}
+.own[aria-checked="true"]{background:var(--accent-soft);border-color:var(--accent)}
+.own[aria-checked="true"] .box{background:var(--accent);border-color:var(--accent)}
+.modal{position:fixed;inset:0;z-index:60;background:var(--scrim);display:grid;place-items:center;padding:16px}
+.modal-box{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:14px;max-width:520px;width:100%;max-height:calc(100dvh - 32px);overflow:auto;padding:20px 22px}
+.modal h2{font:400 24px/1.1 var(--font-display);margin:0}
+.modal h3{font:400 12px/1 var(--font-display);letter-spacing:.16em;color:var(--muted);margin:20px 0 8px}
+.prog{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;font-size:14px;margin-top:14px}
+.prog .t{height:6px;border-radius:3px;background:var(--tile);overflow:hidden;grid-column:1/-1;margin-bottom:7px}
+.prog .t i{display:block;height:100%;background:var(--accent)}
+.prog b{font-variant-numeric:tabular-nums}
+.modal textarea{width:100%;height:84px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:8px;font:12px/1.3 ui-monospace,Menlo,monospace;resize:vertical}
 .card:hover{border-color:var(--accent);transform:translateY(-1px)}
 .card[aria-current="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
 .card .nm{font-weight:600;font-size:14.5px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -310,6 +332,8 @@ body:not(.v-codex) .search,body:not(.v-codex) .meta{display:none}
       <label class="switch"><input type="checkbox" id="craftable" checked> Craftable only</label>
       <span class="ctrl">Power <span class="pls" id="pls"></span></span>
       <label class="ctrl">Sort <select id="sort"><option value="region">Region</option><option value="name">Name</option><option value="pl">Power level</option><option value="station">Station</option></select></label>
+      <label class="ctrl">Show <select id="own"><option value="all">All items</option><option value="todo">Not collected</option><option value="done">Collected</option></select></label>
+      <button class="btn" id="progbtn" data-progress="1" style="padding:5px 12px;font-size:13.5px">My progress</button>
     </div>
     <div class="chips rg" id="rgs" hidden aria-label="Regions"></div>
     <div class="chips" id="subs"></div>
@@ -372,8 +396,55 @@ function icon(img, size, name) {
   return `<span class="spr" role="img" aria-label="${esc(name||"")}" style="width:${size}px;height:${size}px;background-image:url(icons-${s}.webp);background-size:${COLS*size}px auto;background-position:-${x}px -${y}px"></span>`;
 }
 
-const state = { cat:"All", sub:null, rg:null, station:null, pl:0, craftable:true, q:"", sort:"region", sel:null, limit:240 };
+const state = { own:"all", cat:"All", sub:null, rg:null, station:null, pl:0, craftable:true, q:"", sort:"region", sel:null, limit:240 };
 try { const s = JSON.parse(localStorage.getItem("dwc") || "{}"); if (typeof s.craftable === "boolean") state.craftable = s.craftable; if (s.sort) state.sort = s.sort === "cat" ? "region" : s.sort; } catch(e) {}
+/* ================= collected / found ================= */
+const DONE_KEY = "dwc-done", done = new Set();
+function loadDone() { done.clear(); try { JSON.parse(localStorage.getItem(DONE_KEY) || "[]").forEach(n => typeof n === "string" && done.add(n)); } catch(e) {} }
+function saveDone() { try { localStorage.setItem(DONE_KEY, JSON.stringify([...done])); } catch(e) {} }
+loadDone();
+const ownLabel = on => on ? "Collected" : "Mark as collected";
+let currentList = [];
+function updateProgress() {
+  const n = currentList.length, got = currentList.reduce((a, i) => a + (done.has(i.n) ? 1 : 0), 0);
+  $("count").textContent = `${n.toLocaleString()} ${n === 1 ? "item" : "items"}` + (got && state.own === "all" ? ` · ${got.toLocaleString()} collected` : "");
+  const all = I.reduce((a, i) => a + (done.has(i.n) ? 1 : 0), 0);
+  $("progbtn").textContent = all ? `My progress · ${all}/${I.length.toLocaleString()}` : "My progress";
+}
+function toggleDone(id) {
+  const it = I[id]; if (!it) return;
+  done.has(it.n) ? done.delete(it.n) : done.add(it.n);
+  saveDone();
+  const on = done.has(it.n);
+  const o = document.querySelector(`#drawer .own[data-check="${id}"]`);
+  if (o) { o.setAttribute("aria-checked", String(on)); o.querySelector(".t").textContent = ownLabel(on); }
+  if (state.own !== "all") return render();
+  document.querySelectorAll(`.cw[data-cw="${id}"]`).forEach(w => { w.classList.toggle("done", on); w.querySelector(".chk").setAttribute("aria-checked", String(on)); });
+  updateProgress();
+}
+let progEl = null;
+const progressCode = () => "dwc1:" + btoa(unescape(encodeURIComponent(JSON.stringify([...done]))));
+function loadCode(txt) {
+  try { txt = txt.trim(); if (!txt.startsWith("dwc1:")) return -1; const arr = JSON.parse(decodeURIComponent(escape(atob(txt.slice(5))))); if (!Array.isArray(arr)) return -1;
+    done.clear(); arr.forEach(n => typeof n === "string" && done.add(n)); saveDone(); return arr.length; } catch(e) { return -1; }
+}
+function closeProgress() { if (progEl) { progEl.remove(); progEl = null; } }
+function openProgress() {
+  closeProgress();
+  const got = I.filter(i => done.has(i.n)).length;
+  const rows = CAT_ORDER.map(c => { const tot = I.filter(i => i.c === c).length, n = I.filter(i => i.c === c && done.has(i.n)).length; return tot ? `<span>${esc(c)}</span><b>${n}/${tot}</b><span class="t"><i style="width:${Math.round(100 * n / tot)}%"></i></span>` : ""; }).join("");
+  progEl = document.createElement("div"); progEl.className = "modal"; progEl.setAttribute("role", "dialog"); progEl.setAttribute("aria-modal", "true"); progEl.setAttribute("aria-label", "My progress");
+  progEl.innerHTML = `<div class="modal-box"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px"><div><h2>My progress</h2>
+    <p style="margin:6px 0 0;color:var(--muted);font-size:14px"><b style="color:var(--ink)">${got}</b> of ${I.length.toLocaleString()} items collected. Your ticks are saved in this browser on this device.</p></div><button class="close" data-pclose="1" aria-label="Close">×</button></div>
+    <div class="prog">${rows}</div>
+    <h3>Back up or move your progress</h3>
+    <p style="margin:0 0 8px;font-size:13.5px;color:var(--muted)">Copy the code to keep a backup. To restore it, or to move to another device, paste a code in the box and press Load.</p>
+    <textarea id="pcode" spellcheck="false" aria-label="Progress code">${progressCode()}</textarea>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn" data-pcopy="1">Copy code</button><button class="btn" data-pload="1">Load code</button><button class="btn" data-pclear="1" style="margin-left:auto">Clear all</button></div>
+    <p id="pmsg" aria-live="polite" style="margin:10px 0 0;font-size:13.5px;min-height:1.2em"></p></div>`;
+  progEl.addEventListener("click", e => { if (e.target === progEl) closeProgress(); });
+  document.body.appendChild(progEl); progEl.querySelector(".close").focus();
+}
 const save = () => { try { localStorage.setItem("dwc", JSON.stringify({craftable:state.craftable, sort:state.sort})); } catch(e) {} };
 
 function score(it, toks) {
@@ -400,6 +471,8 @@ function filtered(ignoreCat, ignoreStation) {
       if (!it.stations.includes(want)) continue;
     }
     if (state.pl && it.plN !== state.pl) continue;
+    if (state.own === "done" && !done.has(it.n)) continue;
+    if (state.own === "todo" && done.has(it.n)) continue;
     let sc = 1;
     if (toks.length) { sc = score(it, toks); if (!sc) continue; }
     out.push([sc, it]);
@@ -461,17 +534,18 @@ function cardLine(it, st) {
 }
 function card(it) {
   const st = it.stations[0];
-  return `<button class="card" data-id="${it.id}" aria-current="${state.sel===it.id}">
+  const on = done.has(it.n);
+  return `<div class="cw${on ? " done" : ""}" data-cw="${it.id}"><button class="card" data-id="${it.id}" aria-current="${state.sel===it.id}">
     <span class="tileicon">${icon(it.img, 52, it.n)}</span>
     <span style="min-width:0"><span class="nm">${esc(it.n)}</span>
-    <span class="sub">${it.acq ? `<span class="src-tag ${it.acq.k}">${it.acq.k === "quest" ? "Quest" : it.acq.self ? "Vestige" : "Drop"}</span>` : ""}${it.pl ? `<span class="pl">PL ${esc(it.pl)}</span>` : ""}<span>${esc(cardLine(it, st))}</span></span></span></button>`;
+    <span class="sub">${it.acq ? `<span class="src-tag ${it.acq.k}">${it.acq.k === "quest" ? "Quest" : it.acq.self ? "Vestige" : "Drop"}</span>` : ""}${it.pl ? `<span class="pl">PL ${esc(it.pl)}</span>` : ""}<span>${esc(cardLine(it, st))}</span></span></span></button><button class="chk" data-check="${it.id}" role="checkbox" aria-checked="${on}" aria-label="Collected: ${esc(it.n)}" title="${on ? "Collected. Click to untick" : "Mark as collected"}"></button></div>`;
 }
 function render() {
   renderNav(); renderSubs();
   const list = filtered(false);
   const t = state.q ? `Results for “${state.q}”` : state.station != null ? (state.station === -1 ? "Build menu" : I[state.station].n) : state.cat === "All" ? "All items" : state.cat;
   $("title").textContent = !state.q && (state.sub || state.rg) ? [state.cat, state.rg, state.sub].filter(Boolean).join(" · ") : t;
-  $("count").textContent = `${list.length.toLocaleString()} ${list.length === 1 ? "item" : "items"}`;
+  currentList = list; updateProgress(); $("own").value = state.own;
   const shown = list.slice(0, state.limit);
   const grouped = !state.q && state.sort === "region";
   let html = "", last = null;
@@ -483,7 +557,7 @@ function render() {
     html += card(it);
   }
   $("grid").innerHTML = list.length ? html
-    : `<div class="empty" style="grid-column:1/-1"><b>Nothing matches</b>${(() => { const n = state.q ? (() => { const keep = [state.cat, state.sub, state.rg, state.station, state.pl]; state.cat = "All"; state.sub = state.rg = state.station = null; state.pl = 0; const c = filtered(false).length; [state.cat, state.sub, state.rg, state.station, state.pl] = keep; return c; })() : 0; return n ? `${n} ${n === 1 ? "item matches" : "items match"} “${esc(state.q)}” outside the current filters. <button class="btn" style="margin-top:10px" data-everywhere="1">Search everywhere</button>` : "Try fewer words, clear the power filter, or turn off “Craftable only”."; })()}</div>`;
+    : `<div class="empty" style="grid-column:1/-1"><b>Nothing matches</b>${(() => { const n = state.q ? (() => { const keep = [state.cat, state.sub, state.rg, state.station, state.pl, state.own]; state.cat = "All"; state.sub = state.rg = state.station = null; state.pl = 0; state.own = "all"; const c = filtered(false).length; [state.cat, state.sub, state.rg, state.station, state.pl, state.own] = keep; return c; })() : 0; return n ? `${n} ${n === 1 ? "item matches" : "items match"} “${esc(state.q)}” outside the current filters. <button class="btn" style="margin-top:10px" data-everywhere="1">Search everywhere</button>` : "Try fewer words, clear the power filter, or turn off “Craftable only”."; })()}</div>`;
   $("more").hidden = list.length <= state.limit;
   $("more").textContent = `Show ${Math.min(240, list.length - state.limit)} more of ${list.length - state.limit}`;
   $("qclear").hidden = !state.q; $("kbd").hidden = !!state.q;
@@ -569,7 +643,8 @@ function drawer() {
   dock.innerHTML = `${document.body.classList.contains("docked") ? "" : `<div class="scrim" data-close="1"></div>`}
   <aside class="drawer" role="dialog" aria-label="${esc(it.n)}" tabindex="-1" id="drawer">
     <div class="d-head"><span class="tileicon">${icon(it.img, 80, it.n)}</span>
-      <div style="min-width:0"><h2>${esc(it.n)}</h2><div class="tags">${it.pl ? `<span class="pl">PL ${esc(it.pl)}</span>` : ""}<span class="tag">${esc(it.c)} · ${esc(it.s)}</span><span class="tag">${esc(it.rg)}</span>${it.w ? `<span class="tag">Weight ${esc(it.w)}</span>` : ""}</div></div>
+      <div style="min-width:0"><h2>${esc(it.n)}</h2><div class="tags">${it.pl ? `<span class="pl">PL ${esc(it.pl)}</span>` : ""}<span class="tag">${esc(it.c)} · ${esc(it.s)}</span><span class="tag">${esc(it.rg)}</span>${it.w ? `<span class="tag">Weight ${esc(it.w)}</span>` : ""}</div>
+        <button class="own" data-check="${it.id}" role="checkbox" aria-checked="${done.has(it.n)}"><span class="box"></span><span class="t">${ownLabel(done.has(it.n))}</span></button></div>
       <button class="close" data-close="1" aria-label="Close">×</button></div>
     ${it.d ? `<p class="d-desc">${esc(it.d)}</p>` : ""}
     ${acqHtml(it)}
@@ -598,9 +673,15 @@ function select(id, push = true) {
 // events
 document.addEventListener("click", e => {
   const b = e.target.closest("button,[data-close]"); if (!b) return;
+  if (b.dataset.check != null) return toggleDone(+b.dataset.check);
+  if (b.dataset.progress) return openProgress();
+  if (b.dataset.pclose) return closeProgress();
+  if (b.dataset.pcopy) { const ta = $("pcode"); const ok = () => { $("pmsg").textContent = "Copied. Keep it somewhere safe."; }; const fb = () => { ta.focus(); ta.select(); $("pmsg").textContent = "Press Ctrl+C (Cmd+C on Mac) to copy the selected code."; }; try { navigator.clipboard.writeText(ta.value).then(ok, fb); } catch(e) { fb(); } return; }
+  if (b.dataset.pload) { const n = loadCode($("pcode").value); if (n < 0) { $("pmsg").textContent = "That doesn’t look like a progress code. Nothing was changed."; return; } render(); const m = $("pmsg"); $("pcode").value = progressCode(); m.textContent = `Loaded ${n} collected ${n === 1 ? "item" : "items"}.`; return; }
+  if (b.dataset.pclear) { if (!b.dataset.armed) { b.dataset.armed = "1"; b.textContent = "Click again to clear all"; return; } done.clear(); saveDone(); render(); openProgress(); $("pmsg").textContent = "Cleared."; return; }
   if (b.dataset.close) return select(null);
   if (b.dataset.calc) { calcN = Math.max(1, Math.min(999, calcN + +b.dataset.calc)); return drawer(); }
-  if (b.dataset.everywhere) { state.cat = "All"; state.sub = state.rg = state.station = null; state.pl = 0; state.limit = 240; return render(); }
+  if (b.dataset.everywhere) { state.cat = "All"; state.sub = state.rg = state.station = null; state.pl = 0; state.own = "all"; state.limit = 240; return render(); }
   if (b.dataset.cat) { state.cat = b.dataset.cat; state.sub = null; state.rg = null; state.limit = 240; return render(); }
   if (b.dataset.rg != null) { state.rg = b.dataset.rg && state.rg !== b.dataset.rg ? b.dataset.rg : null; state.sub = null; state.limit = 240; return render(); }
   if (b.dataset.sub) { state.sub = state.sub === b.dataset.sub ? null : b.dataset.sub; state.limit = 240; return render(); }
@@ -620,10 +701,12 @@ document.addEventListener("change", e => {
 let qt; $("q").addEventListener("input", e => { clearTimeout(qt); qt = setTimeout(() => { state.q = e.target.value.trim(); state.limit = 240; render(); }, 90); });
 $("q").addEventListener("keydown", e => { if (e.key === "Enter") { const first = document.querySelector(".card"); if (first) select(+first.dataset.id); } });
 $("craftable").addEventListener("change", e => { state.craftable = e.target.checked; save(); render(); });
+$("own").addEventListener("change", e => { state.own = e.target.value; state.limit = 240; render(); });
+addEventListener("storage", e => { if (e.key === DONE_KEY) { loadDone(); if (view === "codex") render(); } });
 $("sort").addEventListener("change", e => { state.sort = e.target.value; save(); render(); });
 document.addEventListener("keydown", e => {
   if (e.key === "/" && document.activeElement !== $("q") && !/input|select|textarea/i.test(document.activeElement.tagName)) { e.preventDefault(); $("q").focus(); $("q").select(); }
-  if (e.key === "Escape") { if (state.sel != null) select(null); else if (state.q) { $("q").value = ""; state.q = ""; render(); } }
+  if (e.key === "Escape") { if (progEl) return closeProgress(); if (state.sel != null) select(null); else if (state.q) { $("q").value = ""; state.q = ""; render(); } }
 });
 addEventListener("resize", () => { if (state.sel != null) { const was = document.body.classList.contains("docked"); if (was !== matchMedia("(min-width:1280px)").matches) drawer(); } });
 
