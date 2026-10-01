@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://saboonah.github.io/dragonwilds-codex-site/sitemap.xml
